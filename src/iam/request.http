@@ -1,0 +1,19 @@
+## sign up 
+
+POST http://localhost:3000/authentication/sign-up
+Content-Type: application/json
+
+{
+    "email": "user1@nestjs.com",
+    "password": "password123"
+}
+
+## sign in 
+
+POST http://localhost:3000/authentication/sign-in
+Content-Type: application/json
+
+{
+    "email": "user1@nestjs.com",
+    "password": "password123"
+}
