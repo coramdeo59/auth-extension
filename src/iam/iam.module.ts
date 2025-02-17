@@ -8,24 +8,31 @@ import { AuthenticationController } from './authentication/authentication.contro
 import { JwtModule } from '@nestjs/jwt';
 import jwtConfig from './config/jwt.config';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { AccessTokenGuard } from './authentication/guards/access-token/access-token.guard';
+import { AuthenticationGuard } from './authentication/guards/authentication/authentication.guard';
+import { RefreshTokenIdsStorage } from './authentication/refresh-token-ids.storage/refresh-token-ids.storage.ts';
 
 
 @Module({
   imports: [
-
     TypeOrmModule.forFeature([User]),
     JwtModule.registerAsync(jwtConfig.asProvider()),
-    ConfigModule.forFeature(jwtConfig)
+    ConfigModule.forFeature(jwtConfig),
   ],
   providers: [
     {
-      provide: HashingService, 
+      provide: HashingService,
       useClass: BcryptService,
     },
-    AuthenticationService
+    {
+      provide: APP_GUARD,
+      useClass: AuthenticationGuard,
+    },
+    AccessTokenGuard,
+    RefreshTokenIdsStorage, 
+    AuthenticationService,
   ],
-  controllers: [AuthenticationController]
+  controllers: [AuthenticationController],
 })
 export class IamModule {}
-   
-

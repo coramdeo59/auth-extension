@@ -1,4 +1,9 @@
-import { ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from 'src/users/entities/user.entity';
 import { Repository } from 'typeorm';
@@ -8,6 +13,11 @@ import { SignInDto } from './dto/sign-in.dto/sign-in.dto';
 import { JwtService } from '@nestjs/jwt';
 import jwtConfig from '../config/jwt.config';
 import { ConfigType } from '@nestjs/config';
+import { ActiveUserData } from '../interfaces/active-user-data.interface';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+
+import { randomUUID } from 'crypto';
+import { RefreshTokenIdsStorage } from './refresh-token-ids.storage/refresh-token-ids.storage.ts';
 
 @Injectable()
 export class AuthenticationService {
@@ -17,8 +27,8 @@ export class AuthenticationService {
     private readonly jwtService: JwtService,
     @Inject(jwtConfig.KEY)
     private readonly jwtConfiguration: ConfigType<typeof jwtConfig>,
+    private readonly refreshTokenIdsStorage: RefreshTokenIdsStorage, // Correct spelling
   ) {}
-
   async signUp(signUpDto: SignUpDto) {
     try {
       const user = new User();
@@ -30,7 +40,6 @@ export class AuthenticationService {
       if (err.code === pgUniqueViolationsErrorCode) {
         throw new ConflictException('Email already exists');
       }
-      console.error(err);
       throw err;
     }
   }
@@ -50,22 +59,67 @@ export class AuthenticationService {
     if (!isEqual) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    return await this.generateTokens(user);
+  }
 
-    const accessToken = await this.jwtService.signAsync(
+  async generateTokens(user: User) {
+    const refreshTokenId = randomUUID();
+    const [accessToken, refreshToken] = await Promise.all([
+      this.signToken<Partial<ActiveUserData>>(
+        user.id,
+        this.jwtConfiguration.accessTokenTtl,
+        { email: user.email },
+      ),
+      this.signToken(user.id, this.jwtConfiguration.refreshTokenTtl, {
+        refreshTokenId,
+      }),
+    ]);
+    await this.refreshTokenIdsStorage.insert(user.id, refreshToken);
+    return {
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  async refreshToken(refreshTokenDto: RefreshTokenDto) {
+    try {
+      const { sub, refreshToken } = await this.jwtService.verifyAsync<
+        Pick<ActiveUserData, 'sub'> & { refreshToken: string }
+      >(refreshTokenDto.refreshToken, {
+        audience: this.jwtConfiguration.audience,
+        issuer: this.jwtConfiguration.issuer,
+        secret: this.jwtConfiguration.secret,
+      });
+      const user = await this.usersRepository.findOneByOrFail({
+        id: sub,
+      });
+      const isValid = await this.refreshTokenIdsStorage.validate(
+        user.id,
+        refreshToken,
+      );
+      if (isValid) {
+        await this.refreshTokenIdsStorage.invalidate(user.id);
+      } else {
+        throw new Error('Refresh token invalid');
+      }
+      return this.generateTokens(user);
+    } catch {
+      throw new UnauthorizedException();
+    }
+  }
+
+  private async signToken<T>(userId: number, expiresIn: number, payload?: T) {
+    return await this.jwtService.signAsync(
       {
-        sub: user.id,
-        email: user.email,
+        sub: userId,
+        ...payload,
       },
       {
         audience: this.jwtConfiguration.audience,
         issuer: this.jwtConfiguration.issuer,
         secret: this.jwtConfiguration.secret,
-        expiresIn: this.jwtConfiguration.accessTokenTtl,
+        expiresIn,
       },
     );
-
-    return {
-      accessToken,
-    };
   }
 }

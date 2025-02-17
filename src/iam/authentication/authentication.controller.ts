@@ -1,34 +1,39 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
-import { Response } from 'express';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Logger,
+  Post,
+  ValidationPipe,
+} from '@nestjs/common';
 import { SignUpDto } from './dto/sign-up.dto/sign-up.dto';
 import { AuthenticationService } from './authentication.service';
 import { SignInDto } from './dto/sign-in.dto/sign-in.dto';
+import { AuthType } from './enums/auth-type.enum';
+import { Auth } from './decorators/auth.decorator';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
-
+@Auth(AuthType.none)
 @Controller('authentication')
 export class AuthenticationController {
+  constructor(private authService: AuthenticationService) {}
 
-    constructor(private authService: AuthenticationService) { }
-    
-    @Post('sign-up')
-    signUp(@Body() SignUpDto: SignUpDto) {
-        return this.authService.signUp(SignUpDto)
-        
-    }
+  @Post('sign-up')
+  @HttpCode(HttpStatus.CREATED)
+  signUp(@Body() signUpDto: SignUpDto) {
+    return this.authService.signUp(signUpDto);
+  }
 
-    @HttpCode(HttpStatus.OK)
-    @Post('sign-in')
-    async signIn(
-        @Res({ passthrough: true }) response: Response, 
-        @Body() signInDto: SignInDto 
-    ) {
-        const accessToken = await this.authService.signIn(signInDto);
-        response.cookie('accessToken', accessToken, {
-            secure: true,
-            httpOnly: true,
-            sameSite: 'lax',
-        });
-        return { message: 'Signed in successfully' }; 
-    }
+  @HttpCode(HttpStatus.OK)
+  @Post('sign-in')
+  signIn(@Body() SignInDto: SignInDto) {
+    return this.authService.signIn(SignInDto);
+  }
 
+  @HttpCode(HttpStatus.OK)
+  @Post('refresh-tokens')
+  refreshToken(@Body() refreshToken: RefreshTokenDto) {
+    return this.authService.refreshToken(refreshToken);
+  }
 }
